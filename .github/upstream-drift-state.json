@@ -1,6 +1,6 @@
 {
-  "upstream": "DoctorMcKay/node-steamcommunity",
   "branch": "master",
-  "last_processed_sha": null,
-  "dispatched": {}
+  "dispatched": {},
+  "last_processed_sha": "fa8d89759077152b0c38175f154e03d0eacd2d1e",
+  "upstream": "DoctorMcKay/node-steamcommunity"
 }
