@@ -143,7 +143,10 @@ class ItemDescription:
     def _set_d_id(self):
         if self.app is App.CS2:
             if (i_action := next(filter(lambda a: "Inspect" in a.name, self.actions), None)) is not None:
-                object.__setattr__(self, "d_id", int(i_action.link.split("%D")[1]))
+                # Steam does not consistently return the optional D identifier; a missing value must not break parsing.
+                _, separator, d_id = i_action.link.rpartition("%D")
+                if separator and d_id.isdecimal():
+                    object.__setattr__(self, "d_id", int(d_id))
 
     @property
     def ident_code(self) -> str:
