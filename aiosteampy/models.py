@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import NamedTuple
 from datetime import datetime
+from re import compile as re_compile
 
 from yarl import URL
 
@@ -16,6 +17,47 @@ from .constants import (
     TradeOfferStatus,
 )
 from .utils import create_ident_code, account_id_to_steam_id, make_inspect_url
+
+_DAY_FIRST_DATE_RE = re_compile(r"(?i)(\d{1,2})\s+(\w+)\s+@\s+(\d{1,2}:\d{2})(am|pm)")
+
+
+def _parse_tradable_after(date_string: str) -> datetime | None:
+    """Parse a Steam Tradable/Marketable After date string.
+
+    Handles the new day-first format (e.g. 17 Jul @ 3:00am, no year —
+    inferred and rolled to next year if in the past) and the legacy
+    month-first format (with or without timezone).
+
+    Returns None on unrecognized format instead of raising, mirroring
+    upstream node-steamcommunity 0f7fc98 + 6e20fbe.
+    """
+    # New day-first format: "17 Jul @ 3:00am"
+    m = _DAY_FIRST_DATE_RE.search(date_string)
+    if m:
+        day, month, time_str, meridiem = m.group(1), m.group(2), m.group(3), m.group(4)
+        now = datetime.now()
+        constructed = f"{day} {month} {now.year} {time_str} {meridiem.upper()}"
+        try:
+            dt = datetime.strptime(constructed, "%d %b %Y %I:%M %p")
+            if dt < now:
+                dt = dt.replace(year=now.year + 1)
+        except ValueError:
+            return None
+        return dt
+
+    # Legacy month-first format
+    try:
+        return datetime.strptime(date_string, TRADABLE_AFTER_DATE_FORMAT)
+    except ValueError:
+        pass
+    # Legacy without timezone, or strip trailing non-local tz (e.g. " PST")
+    if ")" in date_string:
+        truncated = date_string[: date_string.rfind(")") + 1]
+        try:
+            return datetime.strptime(truncated, "%b %d, %Y (%H:%M:%S)")
+        except ValueError:
+            pass
+    return None
 
 
 class ItemAction(NamedTuple):
@@ -165,14 +207,14 @@ class EconItem:
             t_a_descr = next(filter(lambda d: sep in d.value, self.description.owner_descriptions or ()), None)
             if t_a_descr is not None:
                 date_string = t_a_descr.value.split(sep)[1]
-                self.tradable_after = datetime.strptime(date_string, TRADABLE_AFTER_DATE_FORMAT)
+                self.tradable_after = _parse_tradable_after(date_string)
                 return
 
             sep = "This item is trade-protected and cannot be consumed, modified, or transferred until "
             t_a_descr = next(filter(lambda d: sep in d.value, self.description.owner_descriptions or ()), None)
             if t_a_descr is not None:
                 date_string = t_a_descr.value.split(sep)[1]
-                self.tradable_after = datetime.strptime(date_string, TRADABLE_AFTER_DATE_FORMAT)
+                self.tradable_after = _parse_tradable_after(date_string)
                 return
 
     @property
@@ -422,7 +464,7 @@ class BaseTradeOfferItem(EconItem):
             )
             if t_a_descr is not None:
                 date_string = t_a_descr.value.split(sep)[1]
-                self.tradable_after = datetime.strptime(date_string, TRADABLE_AFTER_DATE_FORMAT)
+                self.tradable_after = _parse_tradable_after(date_string)
 
     @property
     def inspect_url(self) -> str | None:
