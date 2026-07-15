@@ -1,0 +1,72 @@
+name: Upstream drift
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      from_sha:
+        description: Optional upstream SHA to backfill from
+        required: false
+        type: string
+      dry_run:
+        description: Classify without creating issues, assigning Copilot, or saving state
+        required: false
+        default: true
+        type: boolean
+  pull_request:
+    types: [opened, synchronize, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  models: read
+  pull-requests: read
+
+concurrency:
+  group: upstream-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Detect and dispatch upstream drift
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+        run: >-
+          python .github/scripts/upstream_drift.py
+          --from-sha "${{ inputs.from_sha }}"
+          ${{ inputs.dry_run && '--dry-run' || '' }}
+      - name: Persist processed upstream cursor
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git diff --quiet -- .github/upstream-drift-state.json || {
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add .github/upstream-drift-state.json
+            git commit -m "chore: update upstream drift cursor"
+            git push
+          }
+
+  verify-provenance:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Verify upstream commit annotations
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python .github/scripts/verify_upstream_provenance.py
