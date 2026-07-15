@@ -9,8 +9,8 @@ from ..models import Confirmation, MyMarketListing, EconItem, TradeOffer, Market
 from ..utils import create_ident_code
 from .login import LoginMixin
 
-
 CONF_URL = STEAM_URL.COMMUNITY / "mobileconf"
+MOBILECONF_USER_AGENT = "okhttp/4.9.2"
 ITEM_INFO_RE = compile(r"'confiteminfo', (?P<item_info>.+), UserYou")
 CONF_OP_TAGS = Literal["allow", "cancel"]
 
@@ -24,12 +24,10 @@ class ConfirmationMixin(LoginMixin):
     __slots__ = ()
 
     @overload
-    async def confirm_sell_listing(self, obj: int, app_context: AppContext) -> Confirmation:
-        ...
+    async def confirm_sell_listing(self, obj: int, app_context: AppContext) -> Confirmation: ...
 
     @overload
-    async def confirm_sell_listing(self, obj: MyMarketListing | EconItem | int) -> Confirmation:
-        ...
+    async def confirm_sell_listing(self, obj: MyMarketListing | EconItem | int) -> Confirmation: ...
 
     async def confirm_sell_listing(
         self,
@@ -154,7 +152,7 @@ class ConfirmationMixin(LoginMixin):
 
         params = await self._create_confirmation_params(tag)
         params |= {"op": tag, "cid": conf.id, "ck": conf.nonce}
-        r = await self.session.get(CONF_URL / "ajaxop", params=params)
+        r = await self.session.get(CONF_URL / "ajaxop", params=params, headers={"User-Agent": MOBILECONF_USER_AGENT})
         rj = await r.json()
 
         success = EResult(rj.get("success"))
@@ -181,7 +179,7 @@ class ConfirmationMixin(LoginMixin):
 
         data = await self._create_confirmation_params(tag)
         data |= {"op": tag, "cid[]": [conf.id for conf in confs], "ck[]": [conf.nonce for conf in confs]}
-        r = await self.session.post(CONF_URL / "multiajaxop", data=data)
+        r = await self.session.post(CONF_URL / "multiajaxop", data=data, headers={"User-Agent": MOBILECONF_USER_AGENT})
         rj: dict = await r.json()
         success = EResult(rj.get("success"))
         if success is not EResult.OK:
@@ -200,7 +198,7 @@ class ConfirmationMixin(LoginMixin):
 
         tag = "getlist"
         params = await self._create_confirmation_params(tag)
-        r = await self.session.get(CONF_URL / tag, params=params)
+        r = await self.session.get(CONF_URL / tag, params=params, headers={"User-Agent": MOBILECONF_USER_AGENT})
         rj: dict = await r.json()
         success = EResult(rj.get("success"))
         if success is not EResult.OK:
@@ -258,7 +256,9 @@ class ConfirmationMixin(LoginMixin):
             conf_id = obj
 
         params = await self._create_confirmation_params(f"details{conf_id}")
-        r = await self.session.get(CONF_URL / f"details/{conf_id}", params=params)
+        r = await self.session.get(
+            CONF_URL / f"details/{conf_id}", params=params, headers={"User-Agent": MOBILECONF_USER_AGENT}
+        )
         rj = await r.json()
         success = EResult(rj.get("success"))
         if success is not EResult.OK:
